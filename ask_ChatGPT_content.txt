@@ -1,0 +1,493 @@
+
+------Experiment_Setup/Model_Generation/Convert_STG_to_TTFM_Task.py------
+import networkx as nx
+import numpy as np
+import json
+import random
+import os
+import matplotlib.pyplot as plt
+
+# Set a fixed seed for reproducibility
+np.random.seed(114515)
+random.seed(114515)
+
+
+# 修改后的绘制DAG函数
+def draw_dag(adj_matrix, node_values, sources_to_start_tasks, end_tasks_to_sinks):
+    # 创建有向图
+    G = nx.DiGraph()
+
+    # 添加任务节点及其属性（计算量）
+    for i in range(len(node_values)):
+        G.add_node(f"Task {i}", weight=node_values[i], node_type="task")
+
+    # 添加任务之间的边及其权重
+    for i in range(len(adj_matrix)):
+        for j in range(len(adj_matrix[i])):
+            if adj_matrix[i][j] != 0:
+                G.add_edge(f"Task {i}", f"Task {j}", weight=adj_matrix[i][j])
+
+    # 添加触发源节点及其连接
+    num_sources = sources_to_start_tasks.shape[1]
+    for source_idx in range(num_sources):
+        source_node = f"Source {source_idx}"
+        G.add_node(source_node, node_type="source")  # 添加源节点
+        for task_idx, weight in enumerate(sources_to_start_tasks[:, source_idx]):
+            if weight > 0:
+                G.add_edge(source_node, f"Task {task_idx}", weight=weight)
+
+    # 添加终点节点及其连接
+    num_sinks = end_tasks_to_sinks.shape[1]
+    for sink_idx in range(num_sinks):
+        sink_node = f"Sink {sink_idx}"
+        G.add_node(sink_node, node_type="sink")  # 添加终点节点
+        for task_idx, weight in enumerate(end_tasks_to_sinks[:, sink_idx]):
+            if weight > 0:
+                G.add_edge(f"Task {task_idx}", sink_node, weight=weight)
+
+    # 使用 circular_layout 布局
+    pos = nx.circular_layout(G)
+
+    # 定义节点颜色
+    node_colors = []
+    for node in G.nodes(data=True):
+        if node[1]['node_type'] == 'task':
+            node_colors.append('skyblue')
+        elif node[1]['node_type'] == 'source':
+            node_colors.append('lightgreen')
+        elif node[1]['node_type'] == 'sink':
+            node_colors.append('salmon')
+
+    # 绘制节点
+    nx.draw(G, pos, with_labels=False, node_color=node_colors, node_size=2000)
+
+    # 显示节点标签（任务节点显示计算量，源和终点显示标签）
+    labels = {}
+    for node, data in G.nodes(data=True):
+        if data["node_type"] == "task":
+            labels[node] = f"{node}\n({data['weight']})"  # 显示任务节点和计算量
+        else:
+            labels[node] = node  # 仅显示源和终点标签
+    nx.draw_networkx_labels(G, pos, labels=labels, font_size=12)
+
+    # 绘制边和边的权重（传输数据量）
+    edge_labels = nx.get_edge_attributes(G, 'weight')
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+    nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
+
+    plt.title("Directed Acyclic Graph (DAG) with Sources, Tasks, and Sinks")
+    plt.show()
+
+
+def parse_stg_file(file_path):
+    """Parse the STG model file."""
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Filter out comment lines and empty lines
+    lines = [line.strip() for line in lines if line.strip() and not line.strip().startswith('#')]
+
+    # Get number of real tasks (excluding virtual start/end)
+    num_real_tasks = int(lines[0])
+
+    tasks = []
+    for i in range(1, len(lines)):
+        parts = lines[i].split()
+        if len(parts) < 3:  # Skip lines that don't have enough data
+            continue
+        task_id = int(parts[0])
+        cost = float(parts[1])
+        num_predecessors = int(parts[2])
+        predecessors = [int(parts[3 + j]) for j in range(num_predecessors) if 3 + j < len(parts)]
+        tasks.append({
+            'id': task_id,
+            'cost': cost,
+            'predecessors': predecessors
+        })
+
+    return num_real_tasks, tasks
+
+
+def create_adjacency_matrix(num_real_tasks, tasks):
+    """Create the adjacency matrix from the tasks."""
+    # Initialize adjacency matrix for real tasks only (1 to num_real_tasks)
+    adj_matrix = np.zeros((num_real_tasks, num_real_tasks))
+
+    # Fill the adjacency matrix based on predecessor relationships
+    for task in tasks:
+        if 1 <= task['id'] <= num_real_tasks:  # Only consider real tasks as destinations
+            for pred in task['predecessors']:
+                if 1 <= pred <= num_real_tasks:  # Only consider real tasks as sources
+                    # If pred is a predecessor of task['id'], then there's an edge from pred to task['id']
+                    # In our adjacency matrix, adj_matrix[i][j] means task i is a predecessor of task j
+                    adj_matrix[pred - 1][task['id'] - 1] = np.random.uniform(0.01, 1)
+
+    return adj_matrix
+
+
+def extract_task_node_values(tasks, num_real_tasks):
+    """Extract task node values (costs) from the tasks."""
+    node_values = np.zeros(num_real_tasks)
+
+    for task in tasks:
+        if 1 <= task['id'] <= num_real_tasks:  # Only consider real tasks
+            node_values[task['id'] - 1] = task['cost']
+
+    return node_values
+
+
+def find_start_end_tasks(tasks, num_real_tasks):
+    """Find start and end tasks by analyzing the task graph."""
+    # Start tasks are those with the virtual start task (0) as a predecessor
+    start_tasks = []
+    for task in tasks:
+        if 1 <= task['id'] <= num_real_tasks and 0 in task['predecessors']:
+            start_tasks.append(task['id'] - 1)  # Convert to 0-based index
+
+    # End tasks are those that are predecessors of the virtual end task (num_real_tasks+1)
+    end_tasks = []
+    for task in tasks:
+        if task['id'] == num_real_tasks + 1:  # Virtual end task
+            end_tasks = [pred - 1 for pred in task['predecessors'] if 1 <= pred <= num_real_tasks]  # Convert to 0-based
+
+    return start_tasks, end_tasks
+
+
+def set_sources_and_sinks(num_real_tasks, start_tasks, end_tasks):
+    """Set sources connected to start tasks and end tasks connected to sinks."""
+    # Randomly decide the number of sources and sinks
+    num_sources = np.random.randint(1, len(start_tasks) + 1)
+    num_sinks = np.random.randint(1, len(end_tasks) + 1)
+
+    # Initialize matrices
+    sources_to_start_tasks = np.zeros((num_real_tasks, num_sources))
+    end_tasks_to_sinks = np.zeros((num_real_tasks, num_sinks))
+
+    # Connect sources to start tasks
+    for start_task in start_tasks:
+        source_idx = np.random.randint(0, num_sources)
+        sources_to_start_tasks[start_task, source_idx] = np.random.uniform(0.001, 5)
+
+    # Connect end tasks to sinks
+    for end_task in end_tasks:
+        sink_idx = np.random.randint(0, num_sinks)
+        end_tasks_to_sinks[end_task, sink_idx] = np.random.uniform(0.001, 0.5)
+
+    return sources_to_start_tasks, end_tasks_to_sinks, num_sources, num_sinks
+
+
+def generate_key_task_flows(adj_matrix, sources_to_start_tasks, end_tasks_to_sinks, num_key_flows=4):
+    """Generate key task flows from sources to sinks."""
+    n = len(adj_matrix)
+    key_flows = []
+
+    attempts = 0
+    max_attempts = 100  # Prevent infinite loops
+
+    while len(key_flows) < num_key_flows and attempts < max_attempts:
+        attempts += 1
+
+        # Randomly select a source
+        source_idx = random.randint(0, sources_to_start_tasks.shape[1] - 1)
+
+        # Find tasks connected to this source
+        start_tasks = [i for i, weight in enumerate(sources_to_start_tasks[:, source_idx]) if weight > 0]
+
+        if not start_tasks:
+            continue
+
+        # Randomly select a start task
+        current_task = random.choice(start_tasks)
+        task_in_path = [current_task]
+
+        # Start random walk through the graph until we reach a sink
+        while True:
+            # Find successors of current task
+            # In the adj_matrix, j is a successor of i if adj_matrix[i][j] > 0
+            successors = [j for j in range(n) if adj_matrix[current_task][j] > 0]
+
+            # Check if the current task is connected to any sink
+            sinks = [i for i, weight in enumerate(end_tasks_to_sinks[current_task]) if weight > 0]
+
+            if successors and (random.random() > 0.3 or not sinks):
+                # Continue to a successor
+                current_task = random.choice(successors)
+                task_in_path.append(current_task)
+            elif sinks:
+                # End the path at a sink
+                sink_idx = random.choice(sinks)
+                break
+            else:
+                # No way to continue or end, abort this path
+                sink_idx = None
+                break
+
+        if sink_idx is not None:
+            key_flow = {
+                "source": source_idx,
+                "sink": sink_idx,
+                "task_in_path": task_in_path
+            }
+
+            # Avoid duplicate flows
+            if key_flow not in key_flows:
+                key_flows.append(key_flow)
+                print(f"Generated key task flow {len(key_flows)}/{num_key_flows}")
+
+    return key_flows
+
+
+def save_json_compact_lists(data, file_path, indent_level=1, line_width=80):
+    """Save data to a JSON file with compact formatting for lists."""
+
+    def format_list(lst, line_width=80):
+        """Format lists to be displayed on a single line."""
+        indent = ""
+        result = "["
+        line = indent
+        for i, item in enumerate(lst):
+            item_str = json.dumps(item)
+            if len(line) + len(item_str) + 2 > line_width:
+                result += line.rstrip() + "\n" + indent
+                line = indent
+            line += item_str + ", "
+        result += line.rstrip(", ") + "]"
+        return result
+
+    def process_data(data, indent_level=0):
+        """Process data to format lists appropriately."""
+        if isinstance(data, list):
+            if all(not isinstance(i, (list, dict)) for i in data):
+                return format_list(data)
+            else:
+                result = "[\n"
+                for i, item in enumerate(data):
+                    result += " " * ((indent_level + 1) * 2)
+                    result += process_data(item, indent_level + 1)
+                    if i < len(data) - 1:
+                        result += ",\n"
+                    else:
+                        result += "\n"
+                result += " " * (indent_level * 2) + "]"
+                return result
+        elif isinstance(data, dict):
+            result = "{\n"
+            for i, (key, value) in enumerate(data.items()):
+                result += " " * ((indent_level + 1) * 2) + f'"{key}": '
+                result += process_data(value, indent_level + 1)
+                if i < len(data) - 1:
+                    result += ",\n"
+                else:
+                    result += "\n"
+            result += " " * (indent_level * 2) + "}"
+            return result
+        else:
+            return json.dumps(data)
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    with open(file_path, 'w') as json_file:
+        json_file.write(process_data(data, indent_level))
+
+
+def convert_stg_to_json(stg_file_path, output_json_path):
+    """Convert STG model to JSON format."""
+    # Parse STG file
+    print(f"Parsing STG file: {stg_file_path}")
+    num_real_tasks, tasks = parse_stg_file(stg_file_path)
+    print(f"Found {num_real_tasks} real tasks.")
+
+    # Create adjacency matrix
+    print("Creating adjacency matrix...")
+    adj_matrix = create_adjacency_matrix(num_real_tasks, tasks)
+
+    # Extract task node values
+    print("Extracting task node values...")
+    node_values = extract_task_node_values(tasks, num_real_tasks)
+
+    # Extract edge values from the adjacency matrix
+    edge_values = adj_matrix[adj_matrix != 0].tolist()
+
+    # Find start and end tasks
+    print("Finding start and end tasks...")
+    start_tasks, end_tasks = find_start_end_tasks(tasks, num_real_tasks)
+    print(f"Start tasks: {start_tasks}")
+    print(f"End tasks: {end_tasks}")
+
+    # Set sources and sinks
+    print("Setting up sources and sinks...")
+    sources_to_start_tasks, end_tasks_to_sinks, num_sources, num_sinks = set_sources_and_sinks(
+        num_real_tasks, start_tasks, end_tasks)
+    print(f"Number of sources: {num_sources}")
+    print(f"Number of sinks: {num_sinks}")
+
+    # Generate key task flows
+    print("Generating key task flows...")
+    key_task_flows = generate_key_task_flows(adj_matrix, sources_to_start_tasks, end_tasks_to_sinks)
+
+    # Prepare data for JSON
+    print("Preparing JSON data...")
+    data = {
+        "adjacency_matrix": adj_matrix.tolist(),
+        "task_node_values": node_values.tolist(),
+        "task_edge_values": edge_values,
+        "sources_to_start_tasks": sources_to_start_tasks.tolist(),
+        "end_tasks_to_sinks": end_tasks_to_sinks.tolist(),
+        "start_tasks": start_tasks,
+        "end_tasks": end_tasks,
+        "num_sources": num_sources,
+        "num_sinks": num_sinks,
+        "key_task_flows": key_task_flows
+    }
+
+    # Save to JSON
+    print(f"Saving result to {output_json_path}")
+    save_json_compact_lists(data, output_json_path)
+    print(f"Result has been saved in {output_json_path}")
+
+    return data
+
+
+# Sample main execution
+if __name__ == "__main__":
+    stg_file_path = "../STG_data/stg_model.stg"
+    output_json_path = "../../TTFM_data/task_info.json"
+    data = convert_stg_to_json(stg_file_path, output_json_path)
+
+    # Draw the graph
+    print("Drawing the graph visualization...")
+    draw_dag(
+        np.array(data["adjacency_matrix"]),
+        np.array(data["task_node_values"]),
+        np.array(data["sources_to_start_tasks"]),
+        np.array(data["end_tasks_to_sinks"])
+    )
+
+------Experiment_Setup/STG_data/stg_model.stg------
+        100
+          0          0          0
+          1          1          1          0
+          2          1          1          0
+          3          8          1          0
+          4          6          1          0
+          5          3          1          0
+          6          7          1          5
+          7          2          1          0
+          8          2          1          0
+          9          3          1          0
+         10          8          1          0
+         11          5          1          0
+         12          3          2          9         10
+         13          4          1         12
+         14         10          1          0
+         15          9          1          3
+         16          5          1         15
+         17          4          3          7          9         13
+         18          7          1          9
+         19          4          5          3          8         14         15         16
+         20         10          2          3         13
+         21          1          4          1         14         16         17
+         22          1          1          9
+         23          4          3          5          6          8
+         24          8          1         18
+         25          5          1         20
+         26         10          1          0
+         27          1          4          6         12         16         17
+         28          9          2          1          7
+         29          1          3          8         16         18
+         30          4          1         29
+         31          6          4         11         19         20         30
+         32          7          1         25
+         33          5          3          5         10         23
+         34          3          4          2          7         10         15
+         35          1          4          3          5          6         21
+         36          6          2          1         24
+         37          1          3          6         14         24
+         38          2          5         10         16         17         18         34
+         39          1          1         16
+         40          1          4          1          7         28         31
+         41          7          4         23         32         38         40
+         42          7          2         10         37
+         43          9          4          5          7         33         41
+         44          8          2          6         12
+         45          4          8          2          6          7         12         30         33         38         40
+         46          4          5         13         20         39         41         42
+         47          7          3         23         36         42
+         48          8          4          4         39         42         45
+         49         10          8          3         14         18         32         37         39         41         43
+         50          1          5          4         10         30         35         48
+         51          6          6          5          6         10         12         28         49
+         52          4          6          4         15         21         34         37         47
+         53          9          3         14         28         43
+         54          9          1         49
+         55          2          6          5         17         19         21         45         46
+         56          4          6          1          9         11         13         22         51
+         57          1          5         11         32         34         44         54
+         58          9          5          1          3         11         12         18
+         59          4          4          6         26         27         55
+         60          3          3          9         46         54
+         61          9         11          2          3          4         15         19         27         32         40         41         42         51
+         62          1          7          3          6         16         29         38         45         50
+         63          2          5          1         17         32         44         62
+         64          8          5         26         53         58         60         61
+         65          5          4          7          8         44         55
+         66          4          7          4          6         17         21         31         39         61
+         67          9         10         10         14         19         29         31         39         52         57         60         63
+         68          9          5          7         17         51         61         67
+         69          9          8         34         39         40         41         43         46         54         57
+         70          6          8          7         11         18         23         37         43         52         67
+         71          7         11          2         25         32         34         35         39         41         58         63         64         65
+         72          2         10          5         14         18         21         30         48         55         65         69         71
+         73          2          4         21         36         39         67
+         74          8          8          7         34         48         60         61         62         63         72
+         75         10          6         14         40         45         49         55         63
+         76          8          7          3          6         17         27         33         58         60
+         77          6          7          3          9         10         19         21         50         57
+         78          9          8         28         32         36         40         45         53         54         70
+         79          5          4         42         51         56         61
+         80          5         12          2          5          8         14         20         23         29         40         45         59         67         75
+         81          1         13          1          8         14         19         27         30         32         48         59         65         66         68         74
+         82          6         12          2          6         16         22         28         35         42         45         48         56         63         81
+         83         10         11         10         17         19         30         31         46         51         57         63         69         76
+         84          3          3         36         45         54
+         85          1         10          4          9         19         24         25         26         27         38         47         57
+         86         10         12          2          5          9         13         32         35         44         55         69         71         78         79
+         87          3          9          2         19         32         46         59         63         68         73         83
+         88          5         12         11         15         21         22         29         39         61         63         70         72         76         82
+         89          8          9          2         10         13         15         19         21         36         50         78
+         90          1         10          2         18         28         51         53         57         62         73         78         81
+         91          6          6          8         14         46         50         55         58
+         92          3         17          8         16         18         19         23         49         52         55         58         63         64         65         70         78         81         85         91
+         93          6         11          1          3          4         13         20         22         36         71         78         80         91
+         94          9          7         19         21         24         40         68         84         86
+         95          3          7          2         30         43         52         58         79         88
+         96          4          4         59         68         84         93
+         97          8          9          1         10         13         14         21         45         58         71         93
+         98          9         13          7         15         21         27         28         44         47         48         50         51         68         71         95
+         99          7          6          2         68         80         83         92         97
+        100         10         10         14         22         35         46         49         57         66         78         85         94
+        101          0          8         77         87         89         90         96         98         99        100
+# Standard Task Graph Set Project
+# Random Task Graph 100/rand0000.stg
+# Precedence constraints generator : sameprob
+#   Random Seed       : 1635
+#   Tasks             : 100 (+dummy tasks : 2)
+#   Edges             : 496 / 4950 (+dummy edges : 20)
+#   Max. Predecessors : 17
+#   Min. Predecessors : 0
+#   Ave. Predecessors : 4.960000
+#   Probability       : 0.100000 (Real : 0.100202)
+# Task processing time generator : unifproc
+#   Random Seed       : 1634
+#   Max. Proc. Time   : 10
+#   Min. Proc. Time   : 1
+#   Ave. Proc. Time   : 5.000000 (Real : 5.320000)
+# CP Length           : 128
+# Parallelism         : 4.156250
+
+
+------------
+
+    请简要分析一下这个代码的功能
+    

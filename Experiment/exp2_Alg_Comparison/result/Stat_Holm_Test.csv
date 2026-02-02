@@ -1,0 +1,5 @@
+Comparison,Algorithm,Z_value,p_raw,p_Holm,Significant (alpha=0.05)
+TS vs GA,GA,9.6766,0.000000e+00,0.000000e+00,True
+TS vs PSO,PSO,9.0441,0.000000e+00,0.000000e+00,True
+TS vs SA,SA,7.5262,5.218048e-14,1.043610e-13,True
+TS vs RS,RS,5.3759,7.621291e-08,7.621291e-08,True

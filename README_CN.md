@@ -59,9 +59,24 @@ pip install -r requirements.txt
 ## 其他说明
 基于该项目，您可以修改各种参数或新建程序文件来进行其他科研、测试。不建议更改现有程序文件的名称、位置，否则可能会破坏其调用关系。
 如果您在研究中使用了该代码，请必须引用论文：
-（论文链接及引用格式将在文章被正式接收后提供）
 
-如果运任何疑问或遇到任何问题，您可以联系此邮箱：
-（联系方式将在文章被正式接收后提供）
+[*TTFM: A triggered task flow model for latency-critical task scheduling in distributed industrial systems*](https://doi.org/10.1016/j.cie.2026.111947)
 
-著作者声明：这份代码必须在对应的论文发表之后公开并附带论文信息。对于您所看到的预览版本，您不得以任何形式外传。对于预览版本的泄露，原作者保留追究法律责任的权利。
+```
+@article{XIANG2026111947,
+title = {TTFM: A triggered task flow model for latency-critical task scheduling in distributed industrial systems},
+journal = {Computers \& Industrial Engineering},
+volume = {215},
+pages = {111947},
+year = {2026},
+issn = {0360-8352},
+doi = {https://doi.org/10.1016/j.cie.2026.111947},
+url = {https://www.sciencedirect.com/science/article/pii/S0360835226001488},
+author = {Chengfeng Xiang and Na Chen and Lei Sun and Jianquan Wang and Ronghui Zhang and Zhangchao Ma},
+keywords = {Task allocation, Latency optimization, Task scheduling, Distributed industrial system, Task flow model, IEC 61499},
+abstract = {Optimizing task allocation and scheduling to minimize latency becomes increasingly critical for production efficiency and stability, as Industry 4.0 drives industrial systems to be more distributed and event-driven. However, conventional operations research and scheduling models often fail to capture the complex, event-driven characteristics and critical end-to-end process flows inherent to these decentralized automation systems. To address this gap, we propose the Triggered Task Flow Model (TTFM), a novel computational framework inspired by the IEC 61499 standard. TTFM provides a more realistic representation by explicitly modeling trigger sources, sinks, critical end-to-end task flows, and their quantifiable costs. To ground the model in practice, we establish a methodology for representing industrial applications and standard benchmarks within the TTFM framework. Analysis of latency composition verifies the model’s validity in capturing shifting physical bottlenecks. We then formulate the task allocation and scheduling optimization problem to minimize the latency of critical flows, which directly impacts production stability and responsiveness. A comparative evaluation of four heuristic algorithms identifies Tabu Search (TS) as providing a superior balance of solution quality and convergence speed for this NP-hard problem. Scalability analysis confirms the viability of TS for practical industrial scales. Our work provides industrial engineers and operations managers with a high-fidelity task model and its application methodology, validating its use for designing and managing next-generation, high-performance distributed industrial systems.}
+}
+```
+
+如果有任何疑问或遇到任何问题，您可以联系此邮箱：
+akesafe@qq.com

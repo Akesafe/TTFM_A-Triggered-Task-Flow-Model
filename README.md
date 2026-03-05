@@ -1,3 +1,10 @@
+# TTFM: A triggered task flow model for latency-critical task scheduling in distributed industrial systems
+
+Optimizing task allocation and scheduling to minimize latency becomes increasingly critical for production efficiency and stability, as Industry 4.0 drives industrial systems to be more distributed and event-driven. However, conventional operations research and scheduling models often fail to capture the complex, event-driven characteristics and critical end-to-end process flows inherent to these decentralized automation systems. To address this gap, we propose the Triggered Task Flow Model (TTFM), a novel computational framework inspired by the IEC 61499 standard. TTFM provides a more realistic representation by explicitly modeling trigger sources, sinks, critical end-to-end task flows, and their quantifiable costs. To ground the model in practice, we establish a methodology for representing industrial applications and standard benchmarks within the TTFM framework. Analysis of latency composition verifies the model’s validity in capturing shifting physical bottlenecks. We then formulate the task allocation and scheduling optimization problem to minimize the latency of critical flows, which directly impacts production stability and responsiveness. A comparative evaluation of four heuristic algorithms identifies Tabu Search (TS) as providing a superior balance of solution quality and convergence speed for this NP-hard problem. Scalability analysis confirms the viability of TS for practical industrial scales. Our work provides industrial engineers and operations managers with a high-fidelity task model and its application methodology, validating its use for designing and managing next-generation, high-performance distributed industrial systems.
+
+<img width="4406" height="1656" alt="Graphical Abstract" src="https://github.com/user-attachments/assets/8a27f816-8231-45f5-bc54-f618a4116604" />
+
+
 ## Environment Setup
 
 ```bash
